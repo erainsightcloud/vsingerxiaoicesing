@@ -25,6 +25,8 @@ from pyutils import (
     get_logger
 )
 
+from muon import Muon
+
 import wandb
 
 logging.basicConfig(format = "%(asctime)s-%(filename)s[line:%(lineno)d]-%(levelname)s: %(message)s", level = logging.INFO)
@@ -80,17 +82,23 @@ class Trainer():
         self.args = args
 
         try:
-            self.g_optimizer = getattr(
-                torch.optim, train_configs['g_optimizer']
-            )(self.models[0].parameters(), **train_configs['g_optimizer_args'])
+            if train_configs['g_optimizer'] == "muon":
+                self.g_optimizer = Muon(self.models[0].parameters(), rank=rank, **train_configs['g_optimizer_args'])
+            else:
+                self.g_optimizer = getattr(
+                    torch.optim, train_configs['g_optimizer']
+                )(self.models[0].parameters(), rank=rank, **train_configs['g_optimizer_args'])
             
             self.g_scheduler = getattr(
                 pyutils.scheduler, train_configs['g_scheduler']
             )(self.g_optimizer, **train_configs['g_scheduler_args'])
             
-            self.d_optimizer = getattr(
-                torch.optim, train_configs['d_optimizer']
-            )(self.models[1].parameters(), **train_configs['d_optimizer_args'])
+            if train_configs['d_optimizer'] == "muon":
+                self.d_optimizer = Muon(self.models[1].parameters(), **train_configs['d_optimizer_args'])
+            else:
+                self.d_optimizer = getattr(
+                    torch.optim, train_configs['d_optimizer']
+                )(self.models[1].parameters(), **train_configs['d_optimizer_args'])
             
             self.d_scheduler = getattr(
                 pyutils.scheduler, train_configs['d_scheduler']

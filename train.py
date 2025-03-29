@@ -21,6 +21,7 @@ from pyutils import (
     melspecplot,
     get_logger
 )
+from muon import Muon
 
 import wandb
 
@@ -70,9 +71,12 @@ class Trainer():
         self.args = args
 
         try:
-            self.g_optimizer = getattr(
-                torch.optim, train_configs['g_optimizer']
-            )(self.models[0].parameters(), **train_configs['g_optimizer_args'])
+            if train_configs['g_optimizer'] == "muon":
+                self.g_optimizer = Muon(self.models[0].parameters(), rank=rank, **train_configs['g_optimizer_args'])
+            else:
+                self.g_optimizer = getattr(
+                    torch.optim, train_configs['g_optimizer']
+                )(self.models[0].parameters(), rank=rank, **train_configs['g_optimizer_args'])
             
             self.g_scheduler = getattr(
                 pyutils.scheduler, train_configs['g_scheduler']
