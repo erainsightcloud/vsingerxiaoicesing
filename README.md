@@ -2,4 +2,4 @@
 
 Features:
 1. [x] Mixture-of-Experts;
-2. [ ] Muon Optimizer;
+2. [x] Muon Optimizer;
