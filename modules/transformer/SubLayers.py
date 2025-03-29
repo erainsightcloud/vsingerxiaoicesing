@@ -1,3 +1,5 @@
+from math import exp
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -91,3 +93,55 @@ class PositionwiseFeedForward(nn.Module):
         output = self.layer_norm(output + residual)
 
         return output
+
+class MixtureOfExperts(nn.Module):
+    def __init__(self, d_in, d_hid, kernel_size, dropout=0.1, num_experts=10, num_cases=2):
+        super(MixtureOfExperts, self).__init__()
+        self.d_in = d_in
+        self.layer_norm = nn.LayerNorm(d_in)
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(d_in, d_hid),
+                nn.ELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_hid, d_in)
+            ) for _ in range(num_experts)
+        ])
+        self.shared = nn.Sequential(
+            nn.Conv1d(d_in, d_hid, kernel_size[0], padding="same"),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(d_hid, d_in, kernel_size[1], padding="same")
+        )
+        self.num_experts = num_experts
+        self.num_cases = num_cases
+        self.route_critic = nn.Sequential(
+            nn.Conv1d(d_in, d_in, 3, padding=1),
+            nn.GELU(),
+            nn.Conv1d(d_in, num_experts, 3, padding=1)
+        )
+    # x: [*, Len, Feat]
+    def forward(self, x):
+        residual = x
+        route_critic = self.route_critic(x.transpose(1, 2)).transpose(1, 2).reshape(-1, self.num_experts) # [*, Experts]
+        x = x.reshape(-1, self.d_in) # [*, Feat]
+        route_value, route_indice = torch.topk(route_critic, self.num_cases, dim=-1) # [*, Cases]
+        route_value = F.softmax(route_value, dim=-1) # [*, Cases]
+        route_pred = torch.full_like(route_critic, 0.0)
+        route_pred = torch.scatter(route_pred, 1, route_indice, route_value) # [*, Experts]
+        y = torch.full_like(x, 0.0)
+        if torch.onnx.is_in_onnx_export():
+            for expert_id in range(self.num_experts):
+                y = y + self.experts[expert_id](x) * route_pred[:, expert_id, None]
+        else:
+            for expert_id in range(self.num_experts):
+                mask = torch.any(route_indice == expert_id, dim=-1) # [*]
+                index = torch.nonzero(mask) # [*, 1]
+                if index.shape[0] < 0:
+                    continue
+                expert_input = torch.gather(x, 0, index.repeat(1, self.d_in)) # [*, Feat]
+                expert_weight = torch.gather(route_pred[:, None, expert_id], 0, index) # [*, Feat]
+                expert_output = self.experts[expert_id](expert_input) # [*, Feat]
+                y = torch.scatter_add(y, 0, index.repeat(1, self.d_in), expert_output * expert_weight) # [*, Feat]
+        y = y.reshape(-1, residual.shape[1], self.d_in) # [*, Len, Feat]
+        return self.layer_norm(residual + y + self.shared(x.transpose(1, 2)).transpose(1, 2))

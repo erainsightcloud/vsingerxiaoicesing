@@ -6,7 +6,7 @@ import numpy as np
 from torch.nn import functional as F
 
 try:
-    from modules_v2.transformer.sublayer import MultiHeadAttention, PositionwiseFeedForward, MultiLayeredConv1d
+    from modules_v2.transformer.sublayer import MultiHeadAttention, MixtureOfExperts, MultiLayeredConv1d
     from modules_v2.transformer.embedding import PositionalEncoding
     from modules_v2.transformer.layer import EncoderLayer
 except (ImportError, ModuleNotFoundError):
@@ -14,7 +14,7 @@ except (ImportError, ModuleNotFoundError):
     import os
     filepath = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, filepath)
-    from SubLayers import MultiHeadAttention, PositionwiseFeedForward
+    from SubLayers import MultiHeadAttention, MixtureOfExperts
 
 class FFTBlock(torch.nn.Module):
     """FFT Block"""
@@ -22,7 +22,7 @@ class FFTBlock(torch.nn.Module):
     def __init__(self, d_model, n_head, d_k, d_v, d_inner, kernel_size, dropout=0.1):
         super(FFTBlock, self).__init__()
         self.slf_attn = MultiHeadAttention(n_head, d_model, d_k, d_v, dropout=dropout)
-        self.pos_ffn = PositionwiseFeedForward(
+        self.pos_ffn = MixtureOfExperts(
             d_model, d_inner, kernel_size, dropout=dropout
         )
 
